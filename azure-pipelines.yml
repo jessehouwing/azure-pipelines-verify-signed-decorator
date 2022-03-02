@@ -1,0 +1,163 @@
+name: '1.0$(rev:.r)'
+
+trigger:
+  branches:
+    include:
+    - main
+  paths:
+    exclude:
+    - README.md
+    - LICENSE
+
+pr:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+  demands: npm
+  
+variables:
+  publisherId: jessehouwing
+  extensionId: azure-pipelines-verify-signed-decorator
+  azureDevOpsOrg: jessehouwing-dev
+  marketplaceServiceConnection: 'Jesse Houwing'
+
+stages:
+- stage: 'Build'
+  displayName: 'Build'
+  jobs:
+  - job: 
+    displayName: 'Build on Windows'
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '10.x'
+      displayName: 'Install Node.js'
+      
+    - task: TfxInstaller@3
+      displayName: 'Use Node CLI for Azure DevOps'
+      inputs:
+        version: '0.9.x'
+        checkLatest: true
+
+    - task: PackageAzureDevOpsExtension@3
+      displayName: 'Package Extension: $(Build.SourcesDirectory)'
+      name: 'packageStep'
+      inputs:
+        rootFolder: '$(Build.SourcesDirectory)'
+        outputPath: '$(Build.ArtifactStagingDirectory)\$(extensionId).vsix'
+        publisherId: $(publisherId)
+        extensionId: $(extensionId)
+        extensionTag: '-build'
+        extensionVersion: '$(Build.BuildNumber)'
+        extensionVisibility: private
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish vsix'
+      inputs:
+        publishLocation: pipeline
+        targetPath: '$(packageStep.Extension.OutputPath)'
+        artifact: 'vsix'
+      condition: succeededOrFailed()
+
+- stage: PublishDev
+  displayName: 'Publish Test'
+  condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+  dependsOn: 'Build'
+  jobs:
+    - deployment: 
+      environment: Publisher JesseHouwing (privately)
+      strategy: 
+        runOnce:
+         deploy:
+          steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '10.x'
+            displayName: 'Install Node.js'
+
+          - task: TfxInstaller@3
+            displayName: 'Use Node CLI for Azure DevOps'
+            inputs:
+              version: '0.9.x'
+              checkLatest: true
+
+          - task: PublishAzureDevOpsExtension@3
+            name: 'publishDev'
+            displayName: 'Publish dev to private marketplace'
+            inputs:
+              connectTo: 'VsTeam'
+              connectedServiceName: $(marketplaceServiceConnection)
+              fileType: 'vsix'
+              vsixFile: '$(Pipeline.Workspace)/vsix/$(extensionId).vsix'
+              publisherId: $(publisherId)
+              extensionId: $(extensionId)
+              extensionTag: '-dev'
+              shareWith: $(azureDevOpsOrg)
+              noWaitValidation: true
+
+          - task: IsAzureDevOpsExtensionValid@3
+            inputs:
+              connectTo: 'VsTeam'
+              connectedServiceName: $(marketplaceServiceConnection)
+              method: 'vsix'
+              vsixFile: '$(publishDev.Extension.OutputPath)'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish vsix'
+            inputs:
+              publishLocation: pipeline
+              targetPath: '$(publishDev.Extension.OutputPath)'
+              artifact: 'dev'
+            condition: succeededOrFailed()
+            
+- stage: PublishProd
+  displayName: 'Publish Prod'
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  dependsOn: 'PublishDev'
+  jobs:
+    - deployment: 
+      environment: Publisher JesseHouwing (publicly)
+      strategy: 
+        runOnce:
+         deploy:
+          steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '10.x'
+            displayName: 'Install Node.js'
+            
+          - task: TfxInstaller@3
+            displayName: 'Use Node CLI for Azure DevOps'
+            inputs:
+              version: '0.9.x'
+              checkLatest: true
+
+          - task: PublishAzureDevOpsExtension@3
+            name: 'publishProd'
+            displayName: 'Publish prod to private marketplace'
+            inputs:
+              connectTo: 'VsTeam'
+              connectedServiceName: $(marketplaceServiceConnection)
+              fileType: 'vsix'
+              vsixFile: '$(Pipeline.Workspace)/vsix/$(extensionId).vsix'
+              publisherId: $(publisherId)
+              extensionId: $(extensionId)
+              extensionTag: '-prod'
+              shareWith: $(azureDevOpsOrg)
+              noWaitValidation:  true
+          
+          - task: IsAzureDevOpsExtensionValid@3
+            inputs:
+              connectTo: 'VsTeam'
+              connectedServiceName: $(marketplaceServiceConnection)
+              method: 'vsix'
+              vsixFile: '$(publishProd.Extension.OutputPath)'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish vsix'
+            inputs:
+              publishLocation: pipeline
+              targetPath: '$(publishProd.Extension.OutputPath)'
+              artifact: 'prod'
+            condition: succeededOrFailed()

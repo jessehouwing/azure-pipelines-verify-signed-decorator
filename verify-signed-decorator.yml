@@ -1,0 +1,36 @@
+steps:
+# Uses a YAML Expression to hide the key import task when it's not needed.
+- ${{ if not( or( eq(variables['azure-pipelines-verify-signed-decorator.skip'], 'true'), eq(variables['azure-pipelines-verify-signed-decorator.importKeys'], 'false') ) ) }}:
+  - task: CmdLine@2
+    displayName: 'Import trusted keys'
+    inputs:
+      script: |
+        @echo off
+
+        REM Download key list and import keys into gpg keyring
+        for /F "tokens=*" %%A in ('curl -s https://xjgdecoratorstorage.blob.core.windows.net/keystore/keys' ) do ( 
+          curl -s %%A | gpg --import 
+        )
+
+# Uses a task condition to ensure the verification always shows on the timeline, even when disabled.
+- task: CmdLine@2
+  displayName: 'Verify commit signature'
+  condition: ne(variables['azure-pipelines-verify-signed-decorator.skip'], 'true')
+  inputs:
+    script: |
+      @echo off
+
+      REM Verify the head commit 
+      git verify-commit HEAD
+      
+      if "%ERRORLEVEL%" == "0" (
+        echo ##vso[task.complete result=Succeeded;]Signed
+      ) else (
+        REM log the error separately because the task.complete isn't shown in the logs for some reason.
+        echo ##vso[task.logissue type=error;]Not Signed or broken signature. You may need to perform the merge or rebase and sign locally, then update the remote branch.
+        echo ##vso[task.complete result=Failed;]Not Signed
+      )
+
+      REM Override the exit code to prevent the result message from getting lost.
+      exit /b 0
+    

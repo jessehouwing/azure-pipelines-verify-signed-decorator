@@ -1,0 +1,38 @@
+{
+    "manifestVersion": 1,
+    "id": "azure-pipelines-verify-signed-decorator",
+    "publisher": "jessehouwing",
+    "version": "1.0.0",
+    "name": "Verify Signed Decorator",
+    "description": "Azure DevOps Extension",
+    "categories": [
+        "Azure Pipelines"
+    ],
+    "icons": {
+        "default": "logo.png"
+    },
+    "targets": [
+        {
+            "id": "Microsoft.VisualStudio.Services"
+        }
+    ],
+    "contributions": [
+        {
+            "id": "verify-signed-decorator",
+            "type": "ms.azure-pipelines.pipeline-decorator",
+            "targets": [
+                "ms.azure-pipelines-agent-job.post-checkout-tasks"
+            ],
+            "properties": {
+                "template": "verify-signed-decorator.yml"
+            }
+        }
+    ],
+    "files": [
+        {
+            "path": "verify-signed-decorator.yml",
+            "addressable": true,
+            "contentType": "text/plain"
+        }
+    ]
+}
